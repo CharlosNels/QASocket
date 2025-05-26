@@ -1,0 +1,5 @@
+build
+*.user
+.cache
+.idea
+cmake-build-release
