@@ -1,11 +1,11 @@
 #include "myudpsocket.h"
 #include "mytcpsocket.h"
-#include <exception>
 
 using namespace asio;
 
 MyUdpSocket::MyUdpSocket(quint64 read_buffer_size, QObject *parent)
-    : QIODevice{parent}, m_read_buffer_size(read_buffer_size) {
+    : QIODevice{parent}, m_read_buffer_size(read_buffer_size)
+{
     m_asio_socket = std::make_shared<ip::udp::socket>(*MyTcpSocket::MyIOContext::getIOContext());
     QIODevice::open(QIODevice::ReadWrite);
     setReadBufferSize(read_buffer_size);
@@ -16,36 +16,57 @@ void MyUdpSocket::setReadBufferSize(quint64 buf_size) {
     m_asio_read_buf = std::make_unique<char[]>(buf_size);
 }
 
-bool MyUdpSocket::connectTo(QHostAddress host, quint16 port) {
-    try {
-        m_remote_ep = ip::udp::endpoint(ip::address::from_string(host.toString().toStdString()), port);
-        m_asio_socket->open(m_remote_ep.protocol());
-        m_asio_socket->connect(m_remote_ep);
-        m_asio_socket->async_receive_from(
-            buffer(m_asio_read_buf.get(), m_read_buffer_size), m_remote_ep,
-            std::bind(&MyUdpSocket::asyncReceiveCallback, this, std::placeholders::_1, std::placeholders::_2));
-    } catch (std::exception &error) {
-        m_error_info = error.what();
+bool MyUdpSocket::connectTo(QHostAddress host, quint16 port)
+{
+    std::error_code ec;
+    m_remote_ep = ip::udp::endpoint(ip::address::from_string(host.toString().toStdString()), port);
+    m_asio_socket->open(m_remote_ep.protocol(), ec);
+    if(ec)
+    {
+        m_error_info = QString::fromStdString(ec.message());
         emit socketErrorOccurred();
         return false;
     }
+    m_asio_socket->connect(m_remote_ep, ec);
+    if(ec)
+    {
+        m_error_info = QString::fromStdString(ec.message());
+        emit socketErrorOccurred();
+        return false;
+    }
+    m_asio_socket->async_receive_from(
+        buffer(m_asio_read_buf.get(), m_read_buffer_size), m_remote_ep,
+        std::bind(&MyUdpSocket::asyncReceiveCallback, this, std::placeholders::_1, std::placeholders::_2));
     return true;
 }
 
-bool MyUdpSocket::bind(const QHostAddress &address, quint16 port) {
-    try {
-        m_local_ep = ip::udp::endpoint(ip::address::from_string(address.toString().toStdString()), port);
-        m_asio_socket->open(m_local_ep.protocol());
-        m_asio_socket->bind(m_local_ep);
-        m_asio_socket->async_receive_from(
-            buffer(m_asio_read_buf.get(), m_read_buffer_size), m_remote_ep,
-            std::bind(&MyUdpSocket::asyncReceiveCallback, this, std::placeholders::_1, std::placeholders::_2));
-    } catch (std::exception &error) {
-        m_error_info = error.what();
+bool MyUdpSocket::bind(const QHostAddress &address, quint16 port)
+{
+    std::error_code ec;
+    m_local_ep = ip::udp::endpoint(ip::address::from_string(address.toString().toStdString()), port);
+    m_asio_socket->open(m_local_ep.protocol(), ec);
+    if(ec)
+    {
+        m_error_info = QString::fromStdString(ec.message());
         emit socketErrorOccurred();
         return false;
     }
+    m_asio_socket->bind(m_local_ep, ec);
+    if(ec)
+    {
+        m_error_info = QString::fromStdString(ec.message());
+        emit socketErrorOccurred();
+        return false;
+    }
+    m_asio_socket->async_receive_from(
+        buffer(m_asio_read_buf.get(), m_read_buffer_size), m_remote_ep,
+        std::bind(&MyUdpSocket::asyncReceiveCallback, this, std::placeholders::_1, std::placeholders::_2));
     return true;
+}
+
+QString MyUdpSocket::getErrorString() const
+{
+    return m_error_info;
 }
 
 bool MyUdpSocket::isSequential() const { return true; }
@@ -53,14 +74,19 @@ bool MyUdpSocket::isSequential() const { return true; }
 void MyUdpSocket::close() {
     std::unique_lock<std::mutex> lock(m_socket_mutex);
     if (m_asio_socket->is_open()) {
-        try {
-            m_asio_socket->shutdown(ip::tcp::socket::shutdown_type::shutdown_both);
-        } catch (std::exception &error) {
-            m_error_info = error.what();
+        std::error_code ec;
+        m_asio_socket->shutdown(ip::tcp::socket::shutdown_type::shutdown_both, ec);
+        if(ec)
+        {
+            m_error_info = QString::fromStdString(ec.message());
             emit socketErrorOccurred();
-            return;
         }
-        m_asio_socket->close();
+        m_asio_socket->close(ec);
+        if(ec)
+        {
+            m_error_info = QString::fromStdString(ec.message());
+            emit socketErrorOccurred();
+        }
     }
 }
 

@@ -13,6 +13,7 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Network)
 
 add_library(QASocket STATIC
   mytcpsocket.cpp mytcpsocket.h myudpsocket.cpp myudpsocket.h
+  mytcpserver.h mytcpserver.cpp
 )
 
 target_link_libraries(QASocket PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)

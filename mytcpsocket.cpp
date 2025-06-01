@@ -1,10 +1,6 @@
 #include "mytcpsocket.h"
 #include <QDebug>
-#include <QEventLoop>
 #include <QHostAddress>
-#include <QMap>
-#include <QTimer>
-#include <exception>
 
 using namespace asio;
 
@@ -12,9 +8,9 @@ asio::io_context *MyTcpSocket::MyIOContext::io_context = nullptr;
 std::thread *MyTcpSocket::MyIOContext::io_thread = nullptr;
 std::mutex MyTcpSocket::MyIOContext::io_mutex;
 
-MyTcpSocket::MyTcpSocket(socket_ptr sock_ptr, quint64 read_buffer_size) : QIODevice(nullptr) {
+MyTcpSocket::MyTcpSocket(socket_ptr sock_ptr, quint64 read_buffer_size) : QIODevice(nullptr)
+{
     m_asio_socket = sock_ptr;
-    m_asio_acceptor = std::make_shared<asio::ip::tcp::acceptor>(*MyIOContext::getIOContext());
     setReadBufferSize(read_buffer_size);
     QIODevice::open(QIODevice::ReadWrite);
     m_asio_socket->async_read_some(
@@ -22,49 +18,45 @@ MyTcpSocket::MyTcpSocket(socket_ptr sock_ptr, quint64 read_buffer_size) : QIODev
         std::bind(&MyTcpSocket::asyncReadCallback, this, std::placeholders::_1, std::placeholders::_2));
 }
 
-MyTcpSocket::MyTcpSocket(quint64 read_buffer_size, QObject *parent) : QIODevice(parent) {
+MyTcpSocket::MyTcpSocket(quint64 read_buffer_size, QObject *parent) : QIODevice(parent)
+{
     m_asio_socket = std::make_shared<ip::tcp::socket>(*MyIOContext::getIOContext());
-    m_asio_acceptor = std::make_shared<ip::tcp::acceptor>(*MyIOContext::getIOContext());
     setReadBufferSize(read_buffer_size);
 }
 
-MyTcpSocket::~MyTcpSocket() {
+MyTcpSocket::~MyTcpSocket()
+{
     std::unique_lock<std::mutex> lock(m_socket_mutex);
-    try {
-        m_asio_socket->cancel();
-    } catch (std::exception &error) {
-        qDebug() << error.what();
-    }
     if (m_asio_socket->is_open()) {
-        try {
-            m_asio_socket->shutdown(ip::tcp::socket::shutdown_type::shutdown_both);
-            m_asio_socket->close();
-        } catch (std::exception &error) {
-            qDebug() << error.what();
+        std::error_code ec;
+        m_asio_socket->shutdown(ip::tcp::socket::shutdown_type::shutdown_both, ec);
+        m_asio_socket->close(ec);
+        if(ec)
+        {
+            qDebug() << ec.message();
         }
-    }
-    if (m_asio_acceptor) {
-        m_asio_acceptor->close();
     }
 }
 
 bool MyTcpSocket::isSequential() const { return true; }
 
-void MyTcpSocket::close() {
-
+void MyTcpSocket::close()
+{
     std::unique_lock<std::mutex> lock(m_socket_mutex);
     if (m_asio_socket->is_open()) {
-        try {
-            m_asio_socket->shutdown(ip::tcp::socket::shutdown_type::shutdown_both);
-        } catch (std::exception &error) {
-            m_error_info = error.what();
+        std::error_code ec;
+        m_asio_socket->shutdown(ip::tcp::socket::shutdown_type::shutdown_both, ec);
+        if(ec)
+        {
+            m_error_info = QString::fromStdString(ec.message());
             emit socketErrorOccurred();
-            return;
         }
-        m_asio_socket->close();
-    }
-    if (m_asio_acceptor) {
-        m_asio_acceptor->close();
+        m_asio_socket->close(ec);
+        if(ec)
+        {
+            m_error_info = QString::fromStdString(ec.message());
+            emit socketErrorOccurred();
+        }
     }
 }
 
@@ -76,8 +68,8 @@ bool MyTcpSocket::waitForReadyRead(int msecs) { return false; }
 
 bool MyTcpSocket::waitForBytesWritten(int msecs) { return false; }
 
-qint64 MyTcpSocket::readData(char *data, qint64 maxlen) {
-
+qint64 MyTcpSocket::readData(char *data, qint64 maxlen)
+{
     std::unique_lock<std::mutex> lock(m_socket_mutex);
     maxlen = maxlen == 0 ? UINT64_MAX : maxlen;
     int read_size = m_recv_buffer.size() <= maxlen ? m_recv_buffer.size() : maxlen;
@@ -87,8 +79,8 @@ qint64 MyTcpSocket::readData(char *data, qint64 maxlen) {
     return read_size;
 }
 
-qint64 MyTcpSocket::readLineData(char *data, qint64 maxlen) {
-
+qint64 MyTcpSocket::readLineData(char *data, qint64 maxlen)
+{
     std::unique_lock<std::mutex> lock(m_socket_mutex);
     maxlen = maxlen == 0 ? UINT64_MAX : maxlen;
     int read_size = 0;
@@ -104,8 +96,8 @@ qint64 MyTcpSocket::readLineData(char *data, qint64 maxlen) {
     return read_size;
 }
 
-qint64 MyTcpSocket::writeData(const char *data, qint64 len) {
-
+qint64 MyTcpSocket::writeData(const char *data, qint64 len)
+{
     std::unique_lock<std::mutex> lock(m_socket_mutex);
     m_asio_socket->async_write_some(const_buffer(data, len), std::bind(&MyTcpSocket::asyncWriteCallback, this,
                                                                        std::placeholders::_1, std::placeholders::_2));
@@ -129,68 +121,53 @@ void MyTcpSocket::asyncConnectCallback(const asio::error_code &ec)
     }
 }
 
-bool MyTcpSocket::bind(const QHostAddress &address, quint16 port) {
-
-    std::unique_lock<std::mutex> lock(m_socket_mutex);
-    try {
-        ip::tcp::endpoint ep(ip::address::from_string(address.toString().toStdString()), port);
-        m_asio_acceptor->open(ep.protocol());
-        m_asio_acceptor->set_option(ip::tcp::acceptor::reuse_address());
-        m_asio_acceptor->bind(ep);
-    } catch (std::exception &error) {
-        m_error_info = error.what();
-        emit socketErrorOccurred();
-        return false;
-    }
-    m_asio_acceptor->listen(0);
-    socket_ptr sock_(new ip::tcp::socket(*MyIOContext::getIOContext()));
-    m_asio_acceptor->async_accept(*sock_,
-                                  std::bind(&MyTcpSocket::asyncAcceptCallback, this, sock_, std::placeholders::_1));
-
-    return true;
-}
-
-void MyTcpSocket::setReadBufferSize(quint64 buf_size) {
-
+void MyTcpSocket::setReadBufferSize(quint64 buf_size)
+{
     std::unique_lock<std::mutex> lock(m_socket_mutex);
     m_read_buffer_size = buf_size;
     m_asio_read_buf  = std::make_unique<char[]>(buf_size);
 }
 
-QString MyTcpSocket::peerAddress() const {
+QString MyTcpSocket::peerAddress() const
+{
     return QString::fromStdString(m_asio_socket->remote_endpoint().address().to_string());
 }
 
-quint16 MyTcpSocket::peerPort() const { return m_asio_socket->remote_endpoint().port(); }
+quint16 MyTcpSocket::peerPort() const
+{
+    return m_asio_socket->remote_endpoint().port();
+}
 
-QString MyTcpSocket::localAddress() const {
+QString MyTcpSocket::localAddress() const
+{
     return QString::fromStdString(m_asio_socket->local_endpoint().address().to_string());
 }
 
-quint16 MyTcpSocket::localPort() const { return m_asio_socket->local_endpoint().port(); }
-
-bool MyTcpSocket::connectToHost(const QString &hostName, quint16 port) {
-
-    std::unique_lock<std::mutex> lock(m_socket_mutex);
-    try {
-        ip::tcp::endpoint host(ip::address::from_string(hostName.toStdString()), port);
-        m_asio_socket->async_connect(host, std::bind(&MyTcpSocket::asyncConnectCallback, this, std::placeholders::_1));
-    } catch (std::exception &error) {
-        m_error_info = error.what();
-        emit socketErrorOccurred();
-        return false;
-    }
-    return true;
+quint16 MyTcpSocket::localPort() const
+{
+    return m_asio_socket->local_endpoint().port();
 }
 
-void MyTcpSocket::disconnectFromHost() {
+QString MyTcpSocket::getErrorString() const
+{
+    return m_error_info;
+}
 
+void MyTcpSocket::connectToHost(const QString &hostName, quint16 port)
+{
+    std::unique_lock<std::mutex> lock(m_socket_mutex);
+    ip::tcp::endpoint host(ip::address::from_string(hostName.toStdString()), port);
+    m_asio_socket->async_connect(host, std::bind(&MyTcpSocket::asyncConnectCallback, this, std::placeholders::_1));
+}
+
+void MyTcpSocket::disconnectFromHost()
+{
     std::unique_lock<std::mutex> lock(m_socket_mutex);
     m_asio_socket->shutdown(ip::tcp::socket::shutdown_type::shutdown_both);
 }
 
-void MyTcpSocket::asyncReadCallback(const std::error_code &ec, size_t size) {
-
+void MyTcpSocket::asyncReadCallback(const std::error_code &ec, size_t size)
+{
     if (!ec) {
         std::unique_lock<std::mutex> lock(m_socket_mutex);
         m_recv_buffer.append(m_asio_read_buf.get(), size);
@@ -205,28 +182,16 @@ void MyTcpSocket::asyncReadCallback(const std::error_code &ec, size_t size) {
     }
 }
 
-void MyTcpSocket::asyncWriteCallback(const std::error_code &ec, size_t size) {
+void MyTcpSocket::asyncWriteCallback(const std::error_code &ec, size_t size)
+{
     if (ec) {
         m_error_info = QString::fromStdString(ec.message());
         emit socketErrorOccurred();
     }
 }
 
-void MyTcpSocket::asyncAcceptCallback(socket_ptr sock, const std::error_code &ec) {
-    if (!ec) {
-        std::unique_lock<std::mutex> lock(m_socket_mutex);
-        MyTcpSocket *new_con = new MyTcpSocket(sock);
-        emit newConnectionIncoming(new_con);
-        socket_ptr sock_(new ip::tcp::socket(*MyIOContext::getIOContext()));
-        m_asio_acceptor->async_accept(*sock_,
-                                      std::bind(&MyTcpSocket::asyncAcceptCallback, this, sock_, std::placeholders::_1));
-    } else {
-        m_error_info = QString::fromStdString(ec.message());
-        emit socketErrorOccurred();
-    }
-}
-
-asio::io_context *MyTcpSocket::MyIOContext::getIOContext() {
+asio::io_context *MyTcpSocket::MyIOContext::getIOContext()
+{
     if (io_context == nullptr) {
         io_mutex.lock();
         io_context = new asio::io_context();
