@@ -11,6 +11,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Network)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Network)
 
+set(ASIO_PATH F:/Libs/asio)
+
+if(WIN32)
+    include_directories(${ASIO_PATH}/include)
+endif()
+
 add_library(QASocket STATIC
   mytcpsocket.cpp mytcpsocket.h myudpsocket.cpp myudpsocket.h
   mytcpserver.h mytcpserver.cpp
