@@ -15,13 +15,16 @@ set(ASIO_PATH F:/Libs/asio)
 
 if(WIN32)
     include_directories(${ASIO_PATH}/include)
+    set(Target_Name QASocketWin)
+else()
+    set(Target_Name QASocketLinux)
 endif()
 
-add_library(QASocket STATIC
+add_library(${Target_Name} STATIC
   mytcpsocket.cpp mytcpsocket.h myudpsocket.cpp myudpsocket.h
   mytcpserver.h mytcpserver.cpp
 )
 
-target_link_libraries(QASocket PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
+target_link_libraries(${Target_Name} PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
 
-target_compile_definitions(QASocket PRIVATE QASOCKET_LIBRARY)
+target_compile_definitions(${Target_Name} PRIVATE QASOCKET_LIBRARY)
